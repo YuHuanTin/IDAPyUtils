@@ -36,7 +36,7 @@ init_env()
 from typing import Literal
 
 from rich import inspect  # inspect(a[0], methods=True, private=True)
-from utils import *
+import utils
 import unicorn
 import capstone
 
@@ -47,152 +47,157 @@ cs.detail = True
 
 uc = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64)
 
+def GetSegmentNameByAddr(addr: int, segs: list[SegmentInfo]) -> str:
+    for seg in segs:
+        if seg.start <= addr < seg.start + seg.len:
+            return seg.name
+    return "unknown"
+
+def GetCodeTag(inst: CsInsn):
+    if inst.mnemonic.startswith('j'):
+        return '[jcc]   '
+    if inst.mnemonic == 'call':
+        return '[call]  '
+    if inst.mnemonic == 'ret':
+        return '[ret]   '
+    return '        '
+
+def AsCode(ea: int, len: int) -> None:
+    if not utils.IsCode(ea):
+        print(f'{hex(ea)} is not code, be code')
+        utils.DelItem(ea, len)
+        utils.CreateInst(ea)
+
+def DumpStack(stackSize: Literal[4, 8], deep: int = 16) -> None:
+    upNum = deep // 2
+    downNum = deep - upNum
+
+    if stackSize == 4:
+        esp = uc.reg_read(unicorn.x86_const.UC_X86_REG_ESP)
+        for i in range(upNum, 0, -1):
+            print(f'{esp + i * 4:08x}: {uc.mem_read(esp + i * 4, 4).hex()}')
+        print(f'> {esp:08x}: {uc.mem_read(esp, 4).hex()}')
+        for i in range(1, downNum):
+            print(f'{esp - i * 4:08x}: {uc.mem_read(esp - i * 4, 4).hex()}')
+    elif stackSize == 8:
+        rsp = uc.reg_read(unicorn.x86_const.UC_X86_REG_RSP)
+        for i in range(upNum, 0, -1):
+            print(f'{rsp + i * 8:016x}: {uc.mem_read(rsp + i * 8, 8).hex()}')
+        print(f'> {rsp:016x}: {uc.mem_read(rsp, 8).hex()}')
+        for i in range(1, downNum):
+            print(f'{rsp - i * 8:016x}: {uc.mem_read(rsp - i * 8, 8).hex()}')
+    pass
+
+def DumpRegs(mode: Literal[16, 32, 64]) -> None:
+    if mode == 16:
+        b = uc.reg_read_batch([
+            unicorn.x86_const.UC_X86_REG_AX,
+            unicorn.x86_const.UC_X86_REG_BX,
+            unicorn.x86_const.UC_X86_REG_CX,
+            unicorn.x86_const.UC_X86_REG_DX,
+            unicorn.x86_const.UC_X86_REG_SI,
+            unicorn.x86_const.UC_X86_REG_DI,
+            unicorn.x86_const.UC_X86_REG_BP,
+            unicorn.x86_const.UC_X86_REG_SP,
+            unicorn.x86_const.UC_X86_REG_IP,
+            unicorn.x86_const.UC_X86_REG_FLAGS,
+        ])
+        print(f'AX: {b[0]:x}\n'
+              f'BX: {b[1]:x}\n'
+              f'CX: {b[2]:x}\n'
+              f'DX: {b[3]:x}\n'
+              f'SI: {b[4]:x}\n'
+              f'DI: {b[5]:x}\n'
+              f'BP: {b[6]:x}\n'
+              f'SP: {b[7]:x}\n'
+              f'IP: {b[8]:x}\n'
+              f'FLAGS: {b[9]:x}')
+    elif mode == 32:
+        b = uc.reg_read_batch([
+            unicorn.x86_const.UC_X86_REG_EAX,
+            unicorn.x86_const.UC_X86_REG_EBX,
+            unicorn.x86_const.UC_X86_REG_ECX,
+            unicorn.x86_const.UC_X86_REG_EDX,
+            unicorn.x86_const.UC_X86_REG_ESI,
+            unicorn.x86_const.UC_X86_REG_EDI,
+            unicorn.x86_const.UC_X86_REG_EBP,
+            unicorn.x86_const.UC_X86_REG_ESP,
+            unicorn.x86_const.UC_X86_REG_EIP,
+            unicorn.x86_const.UC_X86_REG_EFLAGS,
+        ])
+        print(f'EAX: {b[0]:x}\n'
+              f'EBX: {b[1]:x}\n'
+              f'ECX: {b[2]:x}\n'
+              f'EDX: {b[3]:x}\n'
+              f'ESI: {b[4]:x}\n'
+              f'EDI: {b[5]:x}\n'
+              f'EBP: {b[6]:x}\n'
+              f'ESP: {b[7]:x}\n'
+              f'EIP: {b[8]:x}\n'
+              f'EFLAGS: {b[9]:x}')
+    elif mode == 64:
+        b = uc.reg_read_batch([
+            unicorn.x86_const.UC_X86_REG_RAX,
+            unicorn.x86_const.UC_X86_REG_RBX,
+            unicorn.x86_const.UC_X86_REG_RCX,
+            unicorn.x86_const.UC_X86_REG_RDX,
+            unicorn.x86_const.UC_X86_REG_RSI,
+            unicorn.x86_const.UC_X86_REG_RDI,
+            unicorn.x86_const.UC_X86_REG_R8,
+            unicorn.x86_const.UC_X86_REG_R9,
+            unicorn.x86_const.UC_X86_REG_R10,
+            unicorn.x86_const.UC_X86_REG_R11,
+            unicorn.x86_const.UC_X86_REG_R12,
+            unicorn.x86_const.UC_X86_REG_R13,
+            unicorn.x86_const.UC_X86_REG_R14,
+            unicorn.x86_const.UC_X86_REG_R15,
+            unicorn.x86_const.UC_X86_REG_RBP,
+            unicorn.x86_const.UC_X86_REG_RSP,
+            unicorn.x86_const.UC_X86_REG_RIP,
+            unicorn.x86_const.UC_X86_REG_RFLAGS,
+        ])
+        print(f'RAX: {b[0]:x}\n'
+              f'RBX: {b[1]:x}\n'
+              f'RCX: {b[2]:x}\n'
+              f'RDX: {b[3]:x}\n'
+              f'RSI: {b[4]:x}\n'
+              f'RDI: {b[5]:x}\n'
+              f'R8: {b[6]:x}\n'
+              f'R9: {b[7]:x}\n'
+              f'R10: {b[8]:x}\n'
+              f'R11: {b[9]:x}\n'
+              f'R12: {b[10]:x}\n'
+              f'R13: {b[11]:x}\n'
+              f'R14: {b[12]:x}\n'
+              f'R15: {b[13]:x}\n'
+              f'RBP: {b[14]:x}\n'
+              f'RSP: {b[15]:x}\n'
+              f'RIP: {b[16]:x}\n'
+              f'RFLAGS: {b[17]:x}')
+    pass
+
+def AlignDown(addr):
+    return addr & ~0xFFF
+
+def AlignUp(addr):
+    return (addr + 0xFFF) & ~0xFFF
+
 def unicorn_code_hook(uc: Uc, address: int, size: int, user_data: int) -> None:
-    user_data: list[SegmentInfo] = user_data
-
-    def GetSegmentNameByAddr(addr: int) -> str:
-        for seg in user_data:
-            if seg.start <= addr < seg.start + seg.len:
-                return seg.name
-        return "unknown"
-
-    def GetCodeTag(inst: CsInsn):
-        if inst.mnemonic.startswith('j'):
-            return '[jcc]   '
-        return '        '
-
-    d: CsInsn = list(cs.disasm(uc.mem_read(address, size), address))[0]
+    d: capstone.CsInsn = list(cs.disasm(uc.mem_read(address, size), address))[0]
 
     print(f'{GetSegmentNameByAddr(address)}:0x{address:x}:{GetCodeTag(d)}{d.mnemonic}\t{d.op_str}')
+    print(f'{GetSegmentNameByAddr(address, user_data)}:0x{address:x}:{GetCodeTag(d)}{d.mnemonic}\t{d.op_str}')
+    # if d.mnemonic.startswith('j') or d.mnemonic == 'cmove' or d.mnemonic == 'test':
+    #     DumpRegs(64)
 
-    def DoCode(ea: int) -> None:
-        if not IsCode(ea):
-            print(f'{hex(ea)} is not code, be code')
-            DelItem(ea)
-            CreateInst(ea)
-    
-    # DoCode(address)
+    # AsCode(address, d.size)
 
 def runCode(ip: int, end: int, segmentsInfos: list[SegmentInfo]) -> None:
-    def dumpStack(stackSize: Literal[4, 8], deep: int = 16) -> None:
-        upNum = deep // 2
-        downNum = deep - upNum
-
-        if stackSize == 4:
-            esp = uc.reg_read(unicorn.x86_const.UC_X86_REG_ESP)
-            for i in range(upNum, 0, -1):
-                print(f'{esp + i * 4:08x}: {uc.mem_read(esp + i * 4, 4).hex()}')
-            print(f'> {esp:08x}: {uc.mem_read(esp, 4).hex()}')
-            for i in range(1, downNum):
-                print(f'{esp - i * 4:08x}: {uc.mem_read(esp - i * 4, 4).hex()}')
-        elif stackSize == 8:
-            rsp = uc.reg_read(unicorn.x86_const.UC_X86_REG_RSP)
-            for i in range(upNum, 0, -1):
-                print(f'{rsp + i * 8:016x}: {uc.mem_read(rsp + i * 8, 8).hex()}')
-            print(f'> {rsp:016x}: {uc.mem_read(rsp, 8).hex()}')
-            for i in range(1, downNum):
-                print(f'{rsp - i * 8:016x}: {uc.mem_read(rsp - i * 8, 8).hex()}')
-        pass
-
-    def dumpRegs(mode: Literal[16, 32, 64]) -> None:
-        if mode == 16:
-            b = uc.reg_read_batch([
-                unicorn.x86_const.UC_X86_REG_AX,
-                unicorn.x86_const.UC_X86_REG_BX,
-                unicorn.x86_const.UC_X86_REG_CX,
-                unicorn.x86_const.UC_X86_REG_DX,
-                unicorn.x86_const.UC_X86_REG_SI,
-                unicorn.x86_const.UC_X86_REG_DI,
-                unicorn.x86_const.UC_X86_REG_BP,
-                unicorn.x86_const.UC_X86_REG_SP,
-                unicorn.x86_const.UC_X86_REG_IP,
-                unicorn.x86_const.UC_X86_REG_FLAGS,
-            ])
-            print(f'AX: {b[0]:x}\n'
-                  f'BX: {b[1]:x}\n'
-                  f'CX: {b[2]:x}\n'
-                  f'DX: {b[3]:x}\n'
-                  f'SI: {b[4]:x}\n'
-                  f'DI: {b[5]:x}\n'
-                  f'BP: {b[6]:x}\n'
-                  f'SP: {b[7]:x}\n'
-                  f'IP: {b[8]:x}\n'
-                  f'FLAGS: {b[9]:x}')
-        elif mode == 32:
-            b = uc.reg_read_batch([
-                unicorn.x86_const.UC_X86_REG_EAX,
-                unicorn.x86_const.UC_X86_REG_EBX,
-                unicorn.x86_const.UC_X86_REG_ECX,
-                unicorn.x86_const.UC_X86_REG_EDX,
-                unicorn.x86_const.UC_X86_REG_ESI,
-                unicorn.x86_const.UC_X86_REG_EDI,
-                unicorn.x86_const.UC_X86_REG_EBP,
-                unicorn.x86_const.UC_X86_REG_ESP,
-                unicorn.x86_const.UC_X86_REG_EIP,
-                unicorn.x86_const.UC_X86_REG_EFLAGS,
-            ])
-            print(f'EAX: {b[0]:x}\n'
-                  f'EBX: {b[1]:x}\n'
-                  f'ECX: {b[2]:x}\n'
-                  f'EDX: {b[3]:x}\n'
-                  f'ESI: {b[4]:x}\n'
-                  f'EDI: {b[5]:x}\n'
-                  f'EBP: {b[6]:x}\n'
-                  f'ESP: {b[7]:x}\n'
-                  f'EIP: {b[8]:x}\n'
-                  f'EFLAGS: {b[9]:x}')
-        elif mode == 64:
-            b = uc.reg_read_batch([
-                unicorn.x86_const.UC_X86_REG_RAX,
-                unicorn.x86_const.UC_X86_REG_RBX,
-                unicorn.x86_const.UC_X86_REG_RCX,
-                unicorn.x86_const.UC_X86_REG_RDX,
-                unicorn.x86_const.UC_X86_REG_RSI,
-                unicorn.x86_const.UC_X86_REG_RDI,
-                unicorn.x86_const.UC_X86_REG_R8,
-                unicorn.x86_const.UC_X86_REG_R9,
-                unicorn.x86_const.UC_X86_REG_R10,
-                unicorn.x86_const.UC_X86_REG_R11,
-                unicorn.x86_const.UC_X86_REG_R12,
-                unicorn.x86_const.UC_X86_REG_R13,
-                unicorn.x86_const.UC_X86_REG_R14,
-                unicorn.x86_const.UC_X86_REG_R15,
-                unicorn.x86_const.UC_X86_REG_RBP,
-                unicorn.x86_const.UC_X86_REG_RSP,
-                unicorn.x86_const.UC_X86_REG_RIP,
-                unicorn.x86_const.UC_X86_REG_RFLAGS,
-            ])
-            print(f'RAX: {b[0]:x}\n'
-                  f'RBX: {b[1]:x}\n'
-                  f'RCX: {b[2]:x}\n'
-                  f'RDX: {b[3]:x}\n'
-                  f'RSI: {b[4]:x}\n'
-                  f'RDI: {b[5]:x}\n'
-                  f'R8: {b[6]:x}\n'
-                  f'R9: {b[7]:x}\n'
-                  f'R10: {b[8]:x}\n'
-                  f'R11: {b[9]:x}\n'
-                  f'R12: {b[10]:x}\n'
-                  f'R13: {b[11]:x}\n'
-                  f'R14: {b[12]:x}\n'
-                  f'R15: {b[13]:x}\n'
-                  f'RBP: {b[14]:x}\n'
-                  f'RSP: {b[15]:x}\n'
-                  f'RIP: {b[16]:x}\n'
-                  f'RFLAGS: {b[17]:x}')
-        pass
-
-    def align_down(addr):
-        return addr & ~0xFFF
-
-    def align_up(addr):
-        return (addr + 0xFFF) & ~0xFFF
-
     # 1. 收集并计算所有段需要的页面范围
     page_ranges = []
     for seg in segmentsInfos:
-        p_start = align_down(seg.start)
-        p_end = align_up(seg.start + seg.len)
+        p_start = AlignDown(seg.start)
+        p_end = AlignUp(seg.start + seg.len)
         page_ranges.append([p_start, p_end])
 
     # 2. 按起始地址排序
@@ -235,10 +240,10 @@ def runCode(ip: int, end: int, segmentsInfos: list[SegmentInfo]) -> None:
 
     try:
         uc.emu_start(ip, end)  # 执行代码
-        dumpRegs(64)
+        DumpRegs(64)
     except unicorn.UcError as e:
-        dumpRegs(64)
-        dumpStack(8)
+        DumpRegs(64)
+        DumpStack(8)
 
         print(e)
 
