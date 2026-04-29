@@ -1,3 +1,4 @@
+import enum
 from dataclasses import dataclass
 
 import ida_funcs
@@ -11,6 +12,19 @@ class SegmentInfo:
     end: int
     len: int
     name: str
+
+class TypeOfXref(enum.IntEnum):
+    CALL_FAR = idc.fl_CF
+    CALL_NEAR = idc.fl_CN
+    JMP_FAR = idc.fl_JF
+    JMP_NEAR = idc.fl_JN
+    NORMAL = idc.fl_F
+
+    OFFSET = idc.dr_O
+    WRITE = idc.dr_W
+    READ = idc.dr_R
+    TEXT = idc.dr_T
+    INFORMATIONAL = idc.dr_I
 
 def GetEAFromName(name: str) -> int:
     '''
@@ -92,6 +106,9 @@ def CreateInst(ea: int):
 def CreateStr(ea: int, len: int):
     return idc.create_strlit(ea, ea + len)
 
+def CreateCref(from_ea: int, to_ea: int, typeFL_: TypeOfXref):
+    return idc.add_cref(from_ea, to_ea, idc.XREF_USER | typeFL_)
+
 def DelItem(ea: int, len: int | None = None):
     """
     delete ea item as undefined
@@ -105,6 +122,16 @@ def DelItem(ea: int, len: int | None = None):
 
 def DelComment(ea: int, shiftComment: bool = False):
     return idc.set_cmt(ea, '', 1 if shiftComment else 0)
+
+def DelCref(from_ea: int, to_ea: int, delInstIfNoRef: bool = False):
+    """
+    
+    :param from_ea: 
+    :param to_ea: 
+    :param delInstIfNoRef: 如果没有引用，则将代码设置为 undefined 
+    :return: 
+    """
+    return idc.del_cref(from_ea, to_ea, 1 if delInstIfNoRef else 0)
 
 def PatchNop(ea: int, len: int):
     for i in range(len):
