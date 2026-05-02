@@ -27,17 +27,17 @@ def DumpStack(uc: unicorn.Uc, stackSize: Literal[4, 8], deep: int = 16) -> None:
     if stackSize == 4:
         esp = uc.reg_read(unicorn.x86_const.UC_X86_REG_ESP)
         for i in range(upNum, 0, -1):
-            print(f'{esp + i * 4:08x}: {ReadU32Le(uc, esp + i * 4):08x}')
+            print(f'{esp - i * 4:08x}: {ReadU32Le(uc, esp - i * 4):08x}')
         print(f'> {esp:08x}: {ReadU32Le(uc, esp):08x}')
         for i in range(1, downNum):
-            print(f'{esp - i * 4:08x}: {ReadU32Le(uc, esp - i * 4):08x}')
+            print(f'{esp + i * 4:08x}: {ReadU32Le(uc, esp + i * 4):08x}')
     elif stackSize == 8:
         rsp = uc.reg_read(unicorn.x86_const.UC_X86_REG_RSP)
         for i in range(upNum, 0, -1):
-            print(f'{rsp + i * 8:016x}: {ReadU64Le(uc, rsp + i * 8):016x}')
+            print(f'{rsp - i * 8:016x}: {ReadU64Le(uc, rsp - i * 8):016x}')
         print(f'> {rsp:016x}: {ReadU64Le(uc, rsp):016x}')
         for i in range(1, downNum):
-            print(f'{rsp - i * 8:016x}: {ReadU64Le(uc, rsp - i * 8):016x}')
+            print(f'{rsp + i * 8:016x}: {ReadU64Le(uc, rsp + i * 8):016x}')
     pass
 
 def DumpRegs(uc: unicorn.Uc, mode: Literal[16, 32, 64]) -> None:
