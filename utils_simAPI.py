@@ -123,6 +123,7 @@ KNOWN_IMPORTS = {
     "WaitForSingleObject",
     "WideCharToMultiByte",
     "WriteFile",
+    "__chkstk",
 }
 
 
@@ -312,6 +313,9 @@ class SimApi:
         self.uc.mem_write(addr, code)
         self.next_proc_stub = addr + 0x100
         return addr
+
+    def api___chkstk(self) -> None:
+        self._ret(0)
 
     def api_GetLastError(self) -> None:
         self._ret(self.last_error)
