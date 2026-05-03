@@ -2,48 +2,14 @@
 这是 IDA 端视角下执行的代码
 """
 
-"""
-通用环境初始化：自动处理路径并清理本地模块缓存
-必须最先调用
-"""
-import importlib
 import contextlib
-import os
 
-def init_env():
-    # 1. 获取当前脚本所在目录
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # 2. 修正 sys.path 优先级
-    if current_dir not in sys.path:
-        sys.path.insert(0, current_dir)
-    elif sys.path[0] != current_dir:
-        sys.path.remove(current_dir)
-        sys.path.insert(0, current_dir)
-
-    # 3. 自动清理所有本地模块缓存 (核心逻辑)
-    # 我们遍历已加载的模块，如果模块的文件路径在当前目录下，就把它从内存中删掉
-    for module_name in list(sys.modules.keys()):
-        module = sys.modules.get(module_name)
-        if module and hasattr(module, '__file__') and module.__file__:
-            # 如果模块路径是以当前目录开头的，说明是你自己写的业务代码
-            if module.__file__.startswith(current_dir):
-                del sys.modules[module_name]
-
-init_env()
-"""
-通用环境初始化：自动处理路径并清理本地模块缓存
-"""
-
-from typing import Literal
-
-from rich import inspect  # inspect(a[0], methods=True, private=True)
-import utils_ida
-import utils_uc
-import utils_simAPI
 import unicorn
 import capstone
 
+# from rich import inspect  # inspect(a[0], methods=True, private=True)
+import utils_ida
+from Simulate import utils_uc, utils_simAPI
 
 cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 cs.detail = True

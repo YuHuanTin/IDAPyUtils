@@ -9,4 +9,5 @@ dependencies = [
     "requests>=2.33.1",
     "rich>=14.3.3",
     "unicorn>=2.1.4",
+    "x64dbg-automate>=0.7.6",
 ]
