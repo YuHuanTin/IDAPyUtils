@@ -1,3 +1,6 @@
+import utils_ida
+from struct import unpack
+
 def decodeText(buf: bytes) -> bytes:
     out = bytearray()
     i = 0
@@ -30,26 +33,25 @@ def decodeText(buf: bytes) -> bytes:
     return bytes(out)
 
 def main():
-    start = int('00007FF62A66FEEC', 16)
+    start = int('00007FF6E3F4FEEC', 16)
 
     while True:
 
-        b = utils.GetBytesFromEA(start, 4)
+        b = utils_ida.GetBytesFromEA(start, 4)
         length, ec = unpack('<HH', b)
 
         if length == 0:
             print('exit when length = 0')
             break
-        
 
-        utils.DelItem(start, length)
+        utils_ida.DelItem(start, length)
 
-        utils.CreateWord(start)
-        utils.CreateWord(start + 2)
+        utils_ida.CreateWord(start)
+        utils_ida.CreateWord(start + 2)
 
-        utils.CreateStr(start + 4, length - 4)
-        utils.CreateComment(start + 4, decodeText(utils.GetBytesFromEA(start + 4, length - 4)).decode('utf-16le'))
-        print(f'{start:016X} - {length} - {ec} - {decodeText(utils.GetBytesFromEA(start + 4, length - 4)).decode('utf-16le')}')
+        utils_ida.CreateStr(start + 4, length - 4)
+        utils_ida.CreateComment(start + 4, decodeText(utils_ida.GetBytesFromEA(start + 4, length - 4)).decode('utf-16le'))
+        print(f'{start:016X} - {length} - {ec} - {decodeText(utils_ida.GetBytesFromEA(start + 4, length - 4)).decode('utf-16le')}')
 
         start += length
 
