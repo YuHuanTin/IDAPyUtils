@@ -240,6 +240,7 @@ class ApiSnapshot:
 class ApiParamSpec:
     name: str
     types: list[str]
+    meta: list[dict[str, str]]
 
 API_ARG_BASE_TYPES = {'cstr', 'wstr', 'u32ptr', 'u64ptr', 'u32', 'u64'}
 
@@ -250,6 +251,16 @@ def NormalizeApiName(name: str) -> str:
     if name.startswith('__imp_'):
         name = name[6:]
     return name.lower()
+
+def ParseApiArgSpec(text: str) -> tuple[str, dict[str, str]]:
+    typ, sep, rest = text.partition('(')
+    meta = {}
+    if sep and rest.endswith(')'):
+        for item in rest[:-1].split(';'):
+            key, eq, value = item.strip().partition('=')
+            if eq:
+                meta[key.strip().lower()] = value.strip().lower()
+    return typ.strip(), meta
 
 def ApiSyncLayerBaseType(arg_type: str) -> str:
     typ = arg_type.lower()
@@ -272,22 +283,24 @@ def LoadApiParamSpecs(path: str) -> dict[str, ApiParamSpec]:
             parts = [part.strip() for part in rest.replace('，', ',').split(',') if part.strip()]
             if not parts:
                 count = 0
-                types = []
+                raw_types = []
             else:
                 try:
                     count = int(parts[0], 0)
                 except ValueError:
                     print(f'[api-spec-skip] line={line_no} bad count={parts[0]}')
                     continue
-                types = parts[1:]
-            if len(types) < count:
-                types.extend(['u64'] * (count - len(types)))
-            types = types[:count]
+                raw_types = parts[1:]
+            if len(raw_types) < count:
+                raw_types.extend(['u64'] * (count - len(raw_types)))
+            parsed = [ParseApiArgSpec(typ) for typ in raw_types[:count]]
+            types = [typ for typ, _ in parsed]
+            meta = [arg_meta for _, arg_meta in parsed]
             bad_type = next((typ for typ in types if ApiSyncLayerBaseType(typ) not in API_ARG_BASE_TYPES), None)
             if bad_type is not None:
                 print(f'[api-spec-skip] line={line_no} bad type={bad_type}')
                 continue
-            specs[NormalizeApiName(name)] = ApiParamSpec(name.strip(), types)
+            specs[NormalizeApiName(name)] = ApiParamSpec(name.strip(), types, meta)
     print(f'[api-spec] loaded {len(specs)} entries from {path}')
     return specs
 
@@ -301,12 +314,8 @@ def GetApiParamSpecs() -> dict[str, ApiParamSpec]:
 
 class ApiSyncLayer:
     @staticmethod
-    def collect_sync_ranges(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot, current_regs: dict[str, int]) -> list[tuple[int, int]]:
-        ranges = [(current_regs['rsp'], current_regs['rsp'] + STACK_EXTRA)]
-        if current_regs['rax'] and IsPotentialUserPtr(current_regs['rax']):
-            ranges.append((current_regs['rax'], current_regs['rax'] + PAGE_SIZE))
-        ranges.extend(ApiSyncLayer._typed_out_ranges(client, snap))
-        return ranges
+    def collect_sync_ranges(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot, _current_regs: dict[str, int]) -> list[tuple[int, int]]:
+        return ApiSyncLayer._typed_out_ranges(client, snap)
 
     @staticmethod
     def format_args(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot) -> str:
@@ -366,29 +375,63 @@ class ApiSyncLayer:
     def _infer_out_size(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot, spec: ApiParamSpec, index: int) -> int:
         arg_type = ApiSyncLayerBaseType(spec.types[index])
         natural_size = 8 if arg_type == 'u64ptr' else 4 if arg_type == 'u32ptr' else PAGE_SIZE
-        size_arg = ApiSyncLayer._find_out_size_arg(client, snap, spec, index)
-        if size_arg is not None:
-            size_ptr, size_type = size_arg
-            size = ApiSyncLayer._read_typed_scalar(client, size_ptr, size_type)
-            if size:
-                return max(natural_size, size)
-        return natural_size
+        meta = spec.meta[index]
+        size = ApiSyncLayer._read_fixed_size(meta)
+        if size is None:
+            size = ApiSyncLayer._read_size_from_meta(client, snap, spec, meta)
+        return max(natural_size, size) if size else natural_size
 
     @staticmethod
-    def _find_out_size_arg(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot, spec: ApiParamSpec, index: int) -> tuple[int, str] | None:
-        for tail in range(len(spec.types) - 1, index, -1):
-            tail_type = spec.types[tail].lower()
-            if tail_type in {'u32ptr_out', 'u64ptr_out'}:
-                return ApiSyncLayer._read_arg(client, snap, tail), tail_type
+    def _read_fixed_size(meta: dict[str, str]) -> int | None:
+        text = meta.get('size')
+        return ApiSyncLayer._parse_int(text) if text else None
+
+    @staticmethod
+    def _read_size_from_meta(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot, spec: ApiParamSpec, meta: dict[str, str]) -> int | None:
+        size_from = meta.get('size_from')
+        if not size_from:
+            return None
+        size_index = ApiSyncLayer._parse_arg_ref(size_from)
+        if size_index is None or not 0 <= size_index < len(spec.types):
+            return None
+        size = ApiSyncLayer._read_size_arg(client, snap, spec, size_index, meta.get('size_type'))
+        if size is None:
+            return None
+        scale = ApiSyncLayer._parse_int(meta.get('scale'), 1)
+        return size * scale
+
+    @staticmethod
+    def _read_size_arg(client: x64dbg_automate.X64DbgClient, snap: ApiSnapshot, spec: ApiParamSpec, index: int, size_type: str | None) -> int | None:
+        value = ApiSyncLayer._read_arg(client, snap, index)
+        arg_type = ApiSyncLayerBaseType(spec.types[index])
+        read_type = ApiSyncLayerBaseType(size_type) if size_type else arg_type
+        if arg_type in {'u32', 'u64'}:
+            return value & 0xffffffff if read_type == 'u32' else value
+        try:
+            if read_type in {'u32', 'u32ptr'}:
+                return ReadX64DbgU32(client, value)
+            if read_type in {'u64', 'u64ptr'}:
+                return ReadX64DbgU64(client, value)
+        except Exception:
+            return None
         return None
 
     @staticmethod
-    def _read_typed_scalar(client: x64dbg_automate.X64DbgClient, addr: int, arg_type: str) -> int | None:
+    def _parse_int(text: str | None, default: int | None = None) -> int | None:
+        if text is None:
+            return default
         try:
-            if ApiSyncLayerBaseType(arg_type) == 'u32ptr':
-                return ReadX64DbgU32(client, addr)
-            return ReadX64DbgU64(client, addr)
-        except Exception:
+            return int(text, 0)
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _parse_arg_ref(ref: str) -> int | None:
+        if not ref.startswith('arg'):
+            return None
+        try:
+            return int(ref[3:], 0) - 1
+        except ValueError:
             return None
 
     @staticmethod
@@ -418,23 +461,35 @@ class ApiSyncLayer:
             print(f'[x64dbg-read-skip] u64 {hex(addr)}: {exc}')
             return None
 
-def FindCurrentTebPage(client: x64dbg_automate.X64DbgClient, rsp: int) -> MemPage:
+def FindCurrentTeb(client: x64dbg_automate.X64DbgClient, rsp: int) -> tuple[MemPage, int]:
     teb_pages = [page for page in client.memmap() if 'teb' in page.info.lower()]
     for page in teb_pages:
-        stack_base = ReadX64DbgU64(client, page.base_address + 8)
-        stack_limit = ReadX64DbgU64(client, page.base_address + 0x10)
-        if stack_limit <= rsp <= stack_base:
-            return page
-    if not teb_pages:
-        raise RuntimeError('TEB page not found')
-    return teb_pages[0]
+        for teb_base in range(page.base_address, page.base_address + page.region_size, PAGE_SIZE):
+            try:
+                stack_base = ReadX64DbgU64(client, teb_base + 8)
+                stack_limit = ReadX64DbgU64(client, teb_base + 0x10)
+                self_ptr = ReadX64DbgU64(client, teb_base + 0x30)
+            except Exception:
+                continue
+            if self_ptr == teb_base and stack_limit <= rsp <= stack_base:
+                return page, teb_base
+    for page in teb_pages:
+        for teb_base in range(page.base_address, page.base_address + page.region_size, PAGE_SIZE):
+            try:
+                stack_base = ReadX64DbgU64(client, teb_base + 8)
+                stack_limit = ReadX64DbgU64(client, teb_base + 0x10)
+            except Exception:
+                continue
+            if stack_limit <= rsp <= stack_base:
+                return page, teb_base
+    raise RuntimeError('TEB page not found')
 
 def MapTebMemory(uc: unicorn.Uc, client: x64dbg_automate.X64DbgClient, rsp: int) -> None:
-    teb_page = FindCurrentTebPage(client, rsp)
+    teb_page, teb_base = FindCurrentTeb(client, rsp)
     if not MapPageFromX64Dbg(uc, client, teb_page):
         raise RuntimeError(f'TEB map failed: {hex(teb_page.base_address)}')
-    uc.reg_write(unicorn.x86_const.UC_X86_REG_GS_BASE, teb_page.base_address)
-    print(f'[uc-gs] base={hex(teb_page.base_address)}')
+    uc.reg_write(unicorn.x86_const.UC_X86_REG_GS_BASE, teb_base)
+    print(f'[uc-gs] base={hex(teb_base)}')
 
 def EnsureStartInUserCode(client: x64dbg_automate.X64DbgClient, user_start: int, user_end: int) -> None:
     rip = client.get_reg('rip')
@@ -506,14 +561,11 @@ def PopCallByReturn(state, return_to: int) -> int:
             return call_addr
     return 0
 
-
 def IsBlockEnd(insn: capstone.CsInsn) -> bool:
     return insn.mnemonic.startswith('j') or insn.mnemonic == 'call' or insn.mnemonic == 'ret'
 
-
 def FormatInsnLine(insn: capstone.CsInsn, tag: str = '[exec]') -> str:
     return f'{tag} 0x{insn.address:x}: {insn.mnemonic}\t{insn.op_str}'
-
 
 def GetBlockInfo(uc: unicorn.Uc, state, start: int) -> dict[str, int]:
     block_cache = state['block_cache']
@@ -529,7 +581,6 @@ def GetBlockInfo(uc: unicorn.Uc, state, start: int) -> dict[str, int]:
             block_cache[start] = info
             return info
         cur += insn.size
-
 
 def ShouldPrintInsn(uc: unicorn.Uc, state, address: int, insn: capstone.CsInsn) -> bool:
     if not USE_BLOCK_CACHE:
@@ -580,7 +631,6 @@ def DumpFaultBlock(uc: unicorn.Uc, state) -> None:
             return
         cur += insn.size
 
-
 def SyncX64DbgMemoryGraph(uc: unicorn.Uc, client: x64dbg_automate.X64DbgClient, ranges: list[tuple[int, int]]) -> None:
     seen_pages = set()
     for start, end in ranges:
@@ -595,7 +645,6 @@ def SyncX64DbgMemoryGraph(uc: unicorn.Uc, client: x64dbg_automate.X64DbgClient, 
 
     if LOG_UC_MAP:
         print(f'[sync-pages] {len(seen_pages)}')
-
 
 def MapInitialMemory(uc: unicorn.Uc, client: x64dbg_automate.X64DbgClient, rip: int, rsp: int) -> None:
     code_page = FindMemPage(client, rip)
