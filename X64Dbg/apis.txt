@@ -1,18 +1,23 @@
-# apiname:count,type0,type1,...
-# Valid types: cstr,wstr,u32ptr,u64ptr,u32,u64. Add _out for output/inout params.
+# Format: api_name:arg_count:arg0_type,arg1_type,arg2_type...;result_type
+# Valid types: cstr,wstr,u32ptr,u64ptr,u32,u64
+#        tips: cstr and wstr termined with '\x00' and '\x00\x00'
+#              Options use English parentheses and comma separators:
+# Options: output, size_from='argN' or 'ret' (N starts from 1), size=int
+#        tips: result_type is `output` default
+
 GetProcAddress:2,u64,cstr;u64
 LoadLibraryExA:3,cstr,u64,u32;u64
 FreeLibrary:1,u64
 GetModuleHandleA:1,cstr;u64
-GetModuleFileNameA:3,u64,cstr_out(size_from=arg3),u32
-GetModuleFileNameW:3,u64,wstr_out(size_from=arg3),u32
-GetComputerNameW:2,wstr_out(size_from=arg2),u32ptr_out
-GetComputerNameExW:3,u32,wstr_out(size_from=arg3),u32ptr_out
+GetModuleFileNameA:3,u64,cstr(size_from=arg3, output),u32
+GetModuleFileNameW:3,u64,wstr(size_from=arg3, output),u32
+GetComputerNameW:2,wstr(size_from=arg2, output),u32ptr(output)
+GetComputerNameExW:3,u32,wstr(size_from=arg3, output),u32ptr(output)
 GetTickCount:0;u32
 GetLastError:0;u32
 GetACP:0;u32
-GetCommandLineA:0;cstr_out
-GetEnvironmentStringsW:0;wstr_out
+GetCommandLineA:0;cstr
+GetEnvironmentStringsW:0;wstr
 SetLastError:1,u32
 GetProcessHeap:0;u64
 GetStdHandle:1,u32;u64
@@ -23,16 +28,16 @@ FlsAlloc:1,u64
 FlsSetValue:2,u32,u64
 HeapCreate:3,u32,u64,u64
 HeapSetInformation:4,u64,u32,u64,u64
-GetStartupInfoA:1,u64ptr_out(size=0x68)
-GetStartupInfoW:1,u64ptr_out(size=0x68)
+GetStartupInfoA:1,u64ptr(size=0x68, output)
+GetStartupInfoW:1,u64ptr(size=0x68, output)
 HeapFree:3,u64,u32,u64ptr
-RtlAllocateHeap:3,u64,u32,u64;u64_out(size_from=arg3)
-RtlReAllocateHeap:4,u64,u32,u64ptr,u64;u64ptr_out(size_from=arg4)
+RtlAllocateHeap:3,u64,u32,u64;u64(size_from=arg3)
+RtlReAllocateHeap:4,u64,u32,u64ptr,u64;u64ptr(size_from=arg4)
 RtlEnterCriticalSection:1,u64ptr
 RtlLeaveCriticalSection:1,u64ptr
-RtlInitializeCriticalSection:1,u64ptr_out(size=0x28)
-RtlInitializeCriticalSectionAndSpinCount:2,u64ptr_out(size=0x28),u32
-InitializeCriticalSectionAndSpinCount:2,u64ptr_out(size=0x28),u32
+RtlInitializeCriticalSection:1,u64ptr(size=0x28, output)
+RtlInitializeCriticalSectionAndSpinCount:2,u64ptr(size=0x28, output),u32
+InitializeCriticalSectionAndSpinCount:2,u64ptr(size=0x28, output),u32
 CreateFileMappingA:6,u64,u64ptr,u32,u32,u32,cstr;u64
 MapViewOfFile:5,u64,u32,u32,u32,u64;u64
 CreateFileA:7,cstr,u32,u32,u64ptr,u32,u32,u64
@@ -42,86 +47,87 @@ CreateMutexA:3,u64ptr,u32,cstr
 OpenMutexA:3,u32,u32,cstr
 ReleaseMutex:1,u64
 WaitForSingleObject:2,u64,u32
-WSAStartup:2,u32,u64ptr_out(size=0x198)
+WSAStartup:2,u32,u64ptr(size=0x198, output)
 socket:3,u32,u32,u32
-ioctlsocket:3,u64,u32,u32ptr_out
+ioctlsocket:3,u64,u32,u32ptr(output)
 setsockopt:5,u64,u32,u32,u64ptr,u32
-WSAAddressToStringA:5,u64ptr,u32,u64ptr,cstr_out(size_from=arg5),u32ptr_out
-WSAAddressToStringW:5,u64ptr,u32,u64ptr,wstr_out(size_from=arg5),u32ptr_out
-WSAStringToAddressA:5,cstr,u32,u64ptr,u64ptr_out(size_from=arg5),u32ptr_out
-GetAdaptersInfo:2,u64ptr_out(size_from=arg2),u32ptr_out
-GetAdaptersAddresses:5,u32,u32,u64ptr,u64ptr_out(size_from=arg5),u32ptr_out
-GetEnvironmentVariableA:3,cstr,cstr_out(size_from=arg3),u32
-GetVolumeInformationA:8,cstr,cstr_out(size_from=arg3),u32,u32ptr_out,u32ptr_out,u32ptr_out,cstr_out(size_from=arg8),u32
-SHGetFolderPathW:5,u64,u32,u64,u32,wstr_out(size=0x208)
-RegOpenKeyExA:5,u64,cstr,u32,u32,u64ptr_out
-RegQueryValueExA:6,u64,cstr,u64ptr,u32ptr_out,u64ptr_out(size_from=arg6),u32ptr_out
-RegEnumKeyExA:8,u64,u32,cstr_out(size_from=arg4),u32ptr_out,u64ptr,wstr_out(size_from=arg7),u32ptr_out,u64ptr_out(size=8);u32
+WSAAddressToStringA:5,u64ptr,u32,u64ptr,cstr(size_from=arg5, output),u32ptr(output)
+WSAAddressToStringW:5,u64ptr,u32,u64ptr,wstr(size_from=arg5, output),u32ptr(output)
+WSAStringToAddressA:5,cstr,u32,u64ptr,u64ptr(size_from=arg5, output),u32ptr(output)
+GetAdaptersInfo:2,u64ptr(size_from=arg2, output),u32ptr(output)
+GetAdaptersAddresses:5,u32,u32,u64ptr,u64ptr(size_from=arg5, output),u32ptr(output)
+GetEnvironmentVariableA:3,cstr,cstr(size_from=arg3, output),u32
+GetVolumeInformationA:8,cstr,cstr(size_from=arg3, output),u32,u32ptr(output),u32ptr(output),u32ptr(output),cstr(size_from=arg8, output),u32
+SHGetFolderPathW:5,u64,u32,u64,u32,wstr(size=0x208, output)
+RegOpenKeyExA:5,u64,cstr,u32,u32,u64ptr(output)
+RegQueryValueExA:6,u64,cstr,u64ptr,u32ptr(output),u64ptr(size_from=arg6, output),u32ptr(output)
+RegEnumKeyExA:8,u64,u32,cstr(size_from=arg4, output),u32ptr(output),u64ptr,wstr(size_from=arg7, output),u32ptr(output),u64ptr(size=8, output);u32
 RegCloseKey:1,u64
 OpenProcess:3,u32,u32,u32
-CryptAcquireContextA:5,u64ptr_out,cstr,cstr,u32,u32
-CryptGenRandom:3,u64,u32,u64ptr_out(size_from=arg2)
+CryptAcquireContextA:5,u64ptr(output),cstr,cstr,u32,u32
+CryptGenRandom:3,u64,u32,u64ptr(size_from=arg2, output)
 CryptReleaseContext:2,u64,u32
-DeviceIoControl:8,u64,u32,u64ptr,u32,u64ptr_out(size_from=arg6),u32,u32ptr_out,u64ptr
+DeviceIoControl:8,u64,u32,u64ptr,u32,u64ptr(size_from=arg6, output),u32,u32ptr(output),u64ptr
 GetCurrentProcess:0
 GetCurrentProcessId:0
 GetCurrentThreadId:0
-ProcessIdToSessionId:2,u32,u32ptr_out;u32
-GetProcessTimes:5,u64,u64ptr_out(size=8),u64ptr_out(size=8),u64ptr_out(size=8),u64ptr_out(size=8)
-GetSystemTime:1,u64ptr_out(size=0x10)
-GetSystemInfo:1,u64ptr_out(size=0x30)
+ProcessIdToSessionId:2,u32,u32ptr(output);u32
+GetProcessTimes:5,u64,u64ptr(size=8, output),u64ptr(size=8, output),u64ptr(size=8, output),u64ptr(size=8, output)
+GetSystemTime:1,u64ptr(size=0x10, output)
+GetSystemInfo:1,u64ptr(size=0x30, output)
 GetSystemMetrics:1,u32;u32
-SystemTimeToFileTime:2,u64ptr,u64ptr_out(size=8);u32
-SystemTimeToTzSpecificLocalTime:3,u64ptr,u64ptr,u64ptr_out(size=0x10);u32
-GetTimeZoneInformationForYear:3,u32,u64ptr,u64ptr_out(size=0xac);u32
-QueryPerformanceCounter:1,u64ptr_out(size=8);u32
-QueryPerformanceFrequency:1,u64ptr_out(size=8);u32
-GetVersionExA:1,u64ptr_out;u32
-GetCPInfo:2,u32,u64ptr_out(size=0xc);u32
-GetStringTypeW:4,u32,wstr,u32,u64ptr_out(size_from=arg3)
-MultiByteToWideChar:6,u32,u32,cstr,u32,wstr_out(size_from=arg6),u32;u32
-WideCharToMultiByte:8,u32,u32,wstr,u32,cstr_out(size_from=arg6),u32,u64ptr,u64ptr
+SystemTimeToFileTime:2,u64ptr,u64ptr(size=8, output);u32
+SystemTimeToTzSpecificLocalTime:3,u64ptr,u64ptr,u64ptr(size=0x10, output);u32
+GetTimeZoneInformationForYear:3,u32,u64ptr,u64ptr(size=0xac, output);u32
+QueryPerformanceCounter:1,u64ptr(size=8, output);u32
+QueryPerformanceFrequency:1,u64ptr(size=8, output);u32
+GetVersion:0;u32
+GetVersionExA:1,u64ptr(output);u32
+GetCPInfo:2,u32,u64ptr(size=0xc, output);u32
+GetStringTypeW:4,u32,wstr,u32,u64ptr(size_from=arg3, output)
+MultiByteToWideChar:6,u32,u32,cstr,u32,wstr(size_from=arg6, output),u32;u32
+WideCharToMultiByte:8,u32,u32,wstr,u32,cstr(size_from=arg6, output),u32,u64ptr,u64ptr
 CreateDirectoryW:2,wstr,u64ptr
-FindFirstFileW:2,wstr,u64ptr_out(size=0x250);u64
-FindNextFileW:2,u64,u64ptr_out(size=0x250);u32
+FindFirstFileW:2,wstr,u64ptr(size=0x250, output);u64
+FindNextFileW:2,u64,u64ptr(size=0x250, output);u32
 FindClose:1,u64;u32
-GetFileInformationByHandle:2,u64,u64ptr_out(size=0x34);u32
-GetFileVersionInfoSizeW:2,wstr,u32ptr_out;u32
-ReadFile:5,u64,u64ptr,u32,u32ptr_out,u64ptr;u32
-WriteFile:5,u64,u64ptr,u32,u32ptr_out,u64ptr;u32
-SetFilePointerEx:4,u64,u64,u64ptr_out,u32;u32
-GetSystemFirmwareTable:4,u32,u32,u64ptr_out(size_from=arg4),u32;u32
-EnumDeviceDrivers:3,u64ptr_out(size_from=arg2),u32,u32ptr_out;u32
-EnumProcessModules:4,u64,u64ptr_out(size_from=arg3),u32,u32ptr_out;u32
-GetDeviceDriverBaseNameA:3,u64ptr,cstr_out(size_from=arg3),u32;u32
-QueryDosDeviceA:3,cstr,cstr_out(size_from=arg3),u32;u32
-GetSecurityInfo:8,u64,u32,u32,u64ptr_out,u64ptr_out,u64ptr_out,u64ptr_out,u64ptr_out;u32
+GetFileInformationByHandle:2,u64,u64ptr(size=0x34, output);u32
+GetFileVersionInfoSizeW:2,wstr,u32ptr(output);u32
+ReadFile:5,u64,u64ptr,u32,u32ptr(output),u64ptr;u32
+WriteFile:5,u64,u64ptr,u32,u32ptr(output),u64ptr;u32
+SetFilePointerEx:4,u64,u64,u64ptr(output),u32;u32
+GetSystemFirmwareTable:4,u32,u32,u64ptr(size_from=arg4, output),u32;u32
+EnumDeviceDrivers:3,u64ptr(size_from=arg2, output),u32,u32ptr(output);u32
+EnumProcessModules:4,u64,u64ptr(size_from=arg3, output),u32,u32ptr(output);u32
+GetDeviceDriverBaseNameA:3,u64,cstr(size_from=ret, output),u32;u32 # 第一参数为驱动加载地址，不能作为指针读取，fffff 开头
+QueryDosDeviceA:3,cstr,cstr(size_from=arg3, output),u32;u32
+GetSecurityInfo:8,u64,u32,u32,u64ptr(output),u64ptr(output),u64ptr(output),u64ptr(output),u64ptr(output);u32
 SetSecurityInfo:7,u64,u32,u32,u64ptr,u64ptr,u64ptr,u64ptr;u32
-InitializeSecurityDescriptor:2,u64ptr_out(size=0x14),u32;u32
+InitializeSecurityDescriptor:2,u64ptr(size=0x14, output),u32;u32
 SetSecurityDescriptorDacl:4,u64ptr,u32,u64ptr,u32
-SetEntriesInAclW:4,u32,u64ptr,u64ptr,u64ptr_out;u32
-AllocateAndInitializeSid:11,u64ptr,u32,u32,u32,u32,u32,u32,u32,u32,u32,u64ptr_out;u32
+SetEntriesInAclW:4,u32,u64ptr,u64ptr,u64ptr(output);u32
+AllocateAndInitializeSid:11,u64ptr,u32,u32,u32,u32,u32,u32,u32,u32,u32,u64ptr(output);u32
 FreeSid:1,u64ptr
 LocalFree:1,u64
-LookupAccountNameW:7,wstr,wstr,u64ptr_out(size_from=arg4),u32ptr_out,wstr_out(size_from=arg6),u32ptr_out,u32ptr_out;u32
-ConvertSidToStringSidA:2,u64ptr,u64ptr_out;u32
-GetEnvironmentVariableW:3,wstr,wstr_out(size_from=arg3),u32;u32
-CreateThread:6,u64ptr,u64,u64,u64,u32,u64ptr_out;u64
+LookupAccountNameW:7,wstr,wstr,u64ptr(size_from=arg4, output),u32ptr(output),wstr(size_from=arg6, output),u32ptr(output),u32ptr(output);u32
+ConvertSidToStringSidA:2,u64ptr,u64ptr(output);u32
+GetEnvironmentVariableW:3,wstr,wstr(size_from=arg3, output),u32;u32
+CreateThread:6,u64ptr,u64,u64,u64,u32,u64ptr(output);u64
 SetThreadPriority:2,u64,u32;u32
 ConvertThreadToFiber:1,u64;u64
 ConvertFiberToThread:0;u32
 CreateFiberEx:5,u64,u64,u32,u64,u64;u64
 DeleteFiber:1,u64
 SwitchToFiber:1,u64
-getaddrinfo:4,cstr,cstr,u64ptr,u64ptr_out;u32
+getaddrinfo:4,cstr,cstr,u64ptr,u64ptr(output);u32
 FreeAddrInfoW:1,u64ptr
 htons:1,u32;u32
 closesocket:1,u64;u32
 sendto:6,u64,u64ptr,u32,u32,u64ptr,u32;u32
 select:5,u32,u64ptr,u64ptr,u64ptr,u64ptr;u32
-HidD_GetHidGuid:1,u64ptr_out(size=0x10)
-HidD_GetAttributes:2,u64,u64ptr_out(size=0xc);u32
+HidD_GetHidGuid:1,u64ptr(size=0x10, output)
+HidD_GetAttributes:2,u64,u64ptr(size=0xc, output);u32
 SetupDiGetClassDevsA:4,u64ptr,cstr,u64,u32;u64
-SetupDiEnumDeviceInterfaces:5,u64,u64ptr,u64ptr,u32,u64ptr_out(size=0x20);u32
-SetupDiGetDeviceInterfaceDetailA:6,u64,u64ptr,u64ptr_out(size_from=arg4),u32,u32ptr_out,u64ptr_out(size=0x20);u32
+SetupDiEnumDeviceInterfaces:5,u64,u64ptr,u64ptr,u32,u64ptr(size=0x20, output);u32
+SetupDiGetDeviceInterfaceDetailA:6,u64,u64ptr,u64ptr(size_from=arg4, output),u32,u32ptr(output),u64ptr(size=0x20, output);u32
 SetupDiDestroyDeviceInfoList:1,u64;u32

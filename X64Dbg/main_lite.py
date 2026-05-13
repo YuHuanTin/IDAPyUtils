@@ -10,6 +10,7 @@ import x64dbg_automate
 from x64dbg_automate.models import MemPage
 
 import utils_dbg
+import utils_api
 from Simulate import utils_uc
 
 X64DBG_PATH = r"x64dbg.exe"
@@ -84,7 +85,7 @@ def MapInitialMemory(uc: unicorn.Uc, client: x64dbg_automate.X64DbgClient, rip: 
             UC_SyncPage(uc, client, page)
 
     # 映射 TEB
-    # MapTebMemory(uc, client, rsp)
+    MapTebMemory(uc, client, rsp)
 
 def UC_SyncPage(uc: unicorn.Uc, client: x64dbg_automate.X64DbgClient, page: MemPage):
     '''
@@ -152,7 +153,7 @@ def ucb_mem_invalid(uc: unicorn.Uc, access: int, address: int, size: int, value:
             acc = 'FETCH_UNMAPPED'
     if LOG_MEM_ACCESS:
         print(f'{acc}, addr: {address:x}, size: {size:x}, val: {value:x}')
-    state.memHookManager.Read(address, size)
+    state.memHookManager.SyncPageAndRead(address, size)
     return True
 
 def GetSymbolLabelCommentOrOffset(client: x64dbg_automate.X64DbgClient, addr: int) -> str:
@@ -189,7 +190,7 @@ class MemSyncManager:
                 return True
         return False
 
-    def Read(self, addr: int, size: int):
+    def SyncPageAndRead(self, addr: int, size: int):
         if size > self.DEFAULT_PAGE_SIZE:
             raise RuntimeError('too large')
 
@@ -233,11 +234,13 @@ def TraceUntilRet(client: x64dbg_automate.X64DbgClient):
     state = State(client, MemSyncManager(UC, client), (user_start, user_end))
 
     UC.hook_add(unicorn.UC_HOOK_CODE, ucb_code, state)
-    # UC_HOOK_MEM_READ + UC_HOOK_MEM_WRITE + UC_HOOK_MEM_FETCH, https://github.com/unicorn-engine/unicorn/blob/7c5db94191defc1e04a4f66f4eb1220903cba837/include/unicorn/unicorn.h#L429
+    # UC_HOOK_MEM_READ + UC_HOOK_MEM_WRITE + UC_HOOK_MEM_FETCH
+    # https://github.com/unicorn-engine/unicorn/blob/7c5db94191defc1e04a4f66f4eb1220903cba837/include/unicorn/unicorn.h#L429
     UC.hook_add(unicorn.UC_HOOK_MEM_VALID, ucb_mem_valid, state)
     # UC_HOOK_MEM_UNMAPPED + UC_HOOK_MEM_PROT
     UC.hook_add(unicorn.UC_HOOK_MEM_INVALID, ucb_mem_invalid, state)
 
+    apiArgsCapturer = utils_api.APIArgsCapturer(API_PARAMS_FILE, client)
     while True:
         rip = client.get_reg('rip')
         rsp = client.get_reg('rsp')
@@ -250,15 +253,26 @@ def TraceUntilRet(client: x64dbg_automate.X64DbgClient):
         # 模拟，当 hook 返回 false 时正常退出
         UC.emu_start(UC.reg_read(unicorn.x86_const.UC_X86_REG_RIP), -1)
 
-        # dbg 运行 api
+        # 获取模拟结束时 cip 与 返回地址
         rip = UC.reg_read(unicorn.x86_const.UC_X86_REG_RIP)
         callRet = utils_uc.ReadU64Le(UC, UC.reg_read(unicorn.x86_const.UC_X86_REG_RSP))
 
-        utils_dbg.RunToAddress(client, rip)
+        # 获取 api 名称
         info = GetSymbolLabelCommentOrOffset(client, rip)
         print(f'[call] rip: {hex(rip)} info: {info}, callRet: {hex(callRet)}')
 
+        # 注意 apiArgsCapturer 将会捕获 dbg 传参，所以要运行到 cip 位置
+        utils_dbg.RunToAddress(client, rip)
+        beforeApiCall = apiArgsCapturer.onEnter(info)
+        print(f'before api call: {beforeApiCall}')
+
+        # todo, 注意如果是 SwitchToFiber API，需要手动切换 CIP
+        if beforeApiCall and beforeApiCall.name == 'SwitchToFiber':
+            raise RuntimeError('SwitchToFiber not supported yet')
+
         utils_dbg.RunToAddress(client, callRet)
+        afterApiCall = apiArgsCapturer.onLeave()
+        print(f'after api call: {afterApiCall}')
 
 def main():
     client = utils_dbg.GetClient(X64DBG_PATH)
