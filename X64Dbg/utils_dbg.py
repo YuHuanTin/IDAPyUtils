@@ -167,4 +167,12 @@ def RunToAddress(client: x64dbg_automate.X64DbgClient, addr: int):
 
     client.go()
     client.wait_until_stopped()
+
+    if client.get_reg('cip') != addr:
+        print(f'warn! run to {addr:x}, but stop at {client.get_reg('cip'):x}')
+        RunToAddress(client, addr)
+    pass
+
+def RunToUser(client: x64dbg_automate.X64DbgClient):
+    client.cmd_sync('rtu')
     pass

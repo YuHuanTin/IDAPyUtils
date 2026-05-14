@@ -259,20 +259,27 @@ def TraceUntilRet(client: x64dbg_automate.X64DbgClient):
 
         # 获取 api 名称
         info = GetSymbolLabelCommentOrOffset(client, rip)
-        print(f'[call] rip: {hex(rip)} info: {info}, callRet: {hex(callRet)}')
 
         # 注意 apiArgsCapturer 将会捕获 dbg 传参，所以要运行到 cip 位置
         utils_dbg.RunToAddress(client, rip)
         beforeApiCall = apiArgsCapturer.onEnter(info)
+        if beforeApiCall and beforeApiCall.name == 'SwitchToFiber':
+            # x64
+            # +78 CONTEXT.rax store the `BaseFiberStart`
+            # +80 CONTEXT.rcx store the fiber func
+            # +98 CONTEXT.rsp store the ptr of `return addr` (will jmp to here)
+            callRet = client.read_qword(client.read_qword(client.get_reg('rcx') + 0x30 + 0x98))
+        print(f'[call] rip: {hex(rip)} info: {info}, callRet: {hex(callRet)}')
         print(f'before api call: {beforeApiCall}')
 
-        # todo, 注意如果是 SwitchToFiber API，需要手动切换 CIP
-        if beforeApiCall and beforeApiCall.name == 'SwitchToFiber':
-            raise RuntimeError('SwitchToFiber not supported yet')
-
         utils_dbg.RunToAddress(client, callRet)
-        afterApiCall = apiArgsCapturer.onLeave()
-        print(f'after api call: {afterApiCall}')
+
+        # may be api set cip at another api or api end block, like `SwitchToFiber` return
+        if not user_start <= callRet < user_end:
+            utils_dbg.RunToUser(client)
+        if beforeApiCall:
+            afterApiCall = apiArgsCapturer.onLeave()
+            print(f'after api call: {afterApiCall}')
 
 def main():
     client = utils_dbg.GetClient(X64DBG_PATH)
